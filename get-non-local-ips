@@ -10,6 +10,7 @@ filter_non_local_ips() {
 
 extract_pcap() {
   local pcap_file="$1"
+  # shellcheck disable=SC1003
   tshark \
     -r "$pcap_file" \
     -E separator=, \

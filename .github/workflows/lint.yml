@@ -1,0 +1,20 @@
+name: Linting
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  shell-scripts:
+    name: Lint shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install packages
+        run: sudo apt-get install --yes shellcheck
+      - name: Lint cti-check-ips
+        run: shellcheck cti-check-ips
+      - name: Lint get-non-local-ips
+        run: shellcheck get-non-local-ips

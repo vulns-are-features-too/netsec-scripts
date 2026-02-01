@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+log_info() {
+  echo "[*] $1"
+}
+
+log_err() {
+  echo "[!] $1" >&2
+}
+
+check_ips() {
+  local ips_to_check_file="$1"
+  local bad_ips_file="$2"
+  local matches_file="$ips_to_check_file.matches"
+  local bad_ips
+
+  comm -12 "$ips_to_check_file" "$bad_ips_file" >"$matches_file"
+  bad_ips="$(wc -l "$matches_file" | cut -d' ' -f1)"
+  if [[ "$bad_ips" != 0 ]]; then
+    log_err "$bad_ips bad IPs found from $bad_ips_file"
+    cat "$matches_file"
+    return 1
+  fi
+
+  log_info "No bad IP from $bad_ips_file"
+  return 0
+}
+
+get_blocklist_de_ips() {
+  local bad_ips_file="$1"
+  curl --silent 'https://lists.blocklist.de/lists/strongips.txt' | sort >"$bad_ips_file"
+}
+
+get_proofpoint_ips() {
+  local bad_ips_file="$1"
+  curl --silent 'https://rules.emergingthreats.net/blockrules/compromised-ips.txt' | sort >"$bad_ips_file"
+}
+
+get_threathive_ips() {
+  local bad_ips_file="$1"
+  curl --silent 'https://threathive.net/hiveblocklist.txt' | sort >"$bad_ips_file"
+}
+
+get_alienvault_ips() {
+  local bad_ips_file="$1"
+  curl --silent 'http://reputation.alienvault.com/reputation.data' | cut -d'#' -f1 | sort >"$bad_ips_file"
+}
+
+main() {
+  local ips_to_check_file="$1"
+  local blocklist_de_file='/tmp/cti-blocklist-de-bad-ips.txt'
+  local proofpoint_file='/tmp/cti-proofpoint-bad-ips.txt'
+  local threathive_file='/tmp/cti-threathive-bad-ips.txt'
+  local alienvault_file='/tmp/cti-alienvault-bad-ips.txt'
+
+  log_info "Getting bad IP files"
+  local pids=()
+  get_blocklist_de_ips "$blocklist_de_file" &
+  pids+=("$!")
+  get_proofpoint_ips "$proofpoint_file" &
+  pids+=("$!")
+  get_threathive_ips "$threathive_file" &
+  pids+=("$!")
+  get_alienvault_ips "$alienvault_file" &
+  pids+=("$!")
+  wait "${pids[@]}"
+
+  log_info "Checking for bad IPs"
+  local failures=0
+  check_ips "$ips_to_check_file" "$blocklist_de_file" || ((failures += $?))
+  check_ips "$ips_to_check_file" "$proofpoint_file" || ((failures += $?))
+  check_ips "$ips_to_check_file" "$threathive_file" || ((failures += $?))
+  check_ips "$ips_to_check_file" "$alienvault_file" || ((failures += $?))
+
+  return "$failures"
+}
+
+if [[ $# != 1 ]]; then
+  log_err "Usage: $(basename "$0") IPS_TO_CHECK_FILE"
+  exit 1
+fi
+
+if [ ! -f "$1" ]; then
+  log_err "'$1' is not an existing file"
+  exit 1
+fi
+
+if [ ! -s "$1" ]; then
+  log_err "'$1' is empty"
+  exit 1
+fi
+
+main "$1"
+exit $?
